@@ -32,6 +32,9 @@ class MemoryAccess extends Module {
 
     val memory_bundle = Flipped(new RAMBundle)
   })
+  // Byte Offset
+  // - Parameters.WordSize = 4、log2Up(4) - 1 = 1
+  // - io.alu_result(1, 0) : 取位址的 最低 2 個 bits
   val mem_address_index = io.alu_result(log2Up(Parameters.WordSize) - 1, 0).asUInt
 
   io.memory_bundle.write_enable := false.B
@@ -58,14 +61,18 @@ class MemoryAccess extends Module {
   //   Example: LBU loads 0xFF → zero-extended to 0x000000FF
   when(io.memory_read_enable) {
     // Optimized load logic: extract bytes/halfwords based on address alignment
-    val data  = io.memory_bundle.read_data
+    val data  = io.memory_bundle.read_data // 假設 data 為 0x12345678
     val bytes = Wire(Vec(Parameters.WordSize, UInt(Parameters.ByteWidth)))
     for (i <- 0 until Parameters.WordSize) {
+      // i=0 : 取 data[7:0]   -> bytes(0) = 0x78
+      // i=1 : 取 data[15:8]  -> bytes(1) = 0x56
+      // i=2 : 取 data[23:16] -> bytes(2) = 0x34
+      // i=3 : 取 data[31:24] -> bytes(3) = 0x12
       bytes(i) := data((i + 1) * Parameters.ByteBits - 1, i * Parameters.ByteBits)
     }
     // Select byte based on lower 2 address bits (mem_address_index)
     val byte = bytes(mem_address_index)
-    // Select halfword based on bit 1 of address (word-aligned halfwords)
+    // Select halfword based on bit 1 of address (word-aligned halfwords) 00、01、10、11
     val half = Mux(mem_address_index(1), Cat(bytes(3), bytes(2)), Cat(bytes(1), bytes(0)))
 
     // TODO: Complete sign/zero extension for load operations
@@ -78,19 +85,19 @@ class MemoryAccess extends Module {
       Seq(
         // TODO: Complete LB (sign-extend byte)
         // Hint: Replicate sign bit, then concatenate with byte
-        InstructionsTypeL.lb  -> ?,
+        InstructionsTypeL.lb  -> Cat(Fill(24, byte(7)), byte),
 
         // TODO: Complete LBU (zero-extend byte)
         // Hint: Fill upper bits with zero, then concatenate with byte
-        InstructionsTypeL.lbu -> ?,
+        InstructionsTypeL.lbu -> Cat(0.U(24.W), byte),
 
         // TODO: Complete LH (sign-extend halfword)
         // Hint: Replicate sign bit, then concatenate with halfword
-        InstructionsTypeL.lh  -> ?,
+        InstructionsTypeL.lh  -> Cat(Fill(16, half(15)), half),
 
         // TODO: Complete LHU (zero-extend halfword)
         // Hint: Fill upper bits with zero, then concatenate with halfword
-        InstructionsTypeL.lhu -> ?,
+        InstructionsTypeL.lhu -> Cat(0.U(16.W), half),
 
         // LW: Load full word, no extension needed (completed example)
         InstructionsTypeL.lw  -> data
@@ -126,9 +133,9 @@ class MemoryAccess extends Module {
     val data = io.reg2_data
     // Optimized store logic: reduce combinational depth by simplifying shift operations
     // mem_address_index is already computed from address alignment (bits 1:0)
-    val strobeInit   = VecInit(Seq.fill(Parameters.WordSize)(false.B))
-    val defaultData  = 0.U(Parameters.DataWidth)
-    val writeStrobes = WireInit(strobeInit)
+    val strobeInit   = VecInit(Seq.fill(Parameters.WordSize)(false.B)) // 長度為 4 的陣列，裡面全是 false ([0, 0, 0, 0])
+    val defaultData  = 0.U(Parameters.DataWidth) 
+    val writeStrobes = WireInit(strobeInit)     // WireInit 創造了一組 4 條訊號線，設定它們的預設狀態是「全部關閉」
     val writeData    = WireDefault(defaultData)
 
     switch(io.funct3) {
@@ -137,24 +144,25 @@ class MemoryAccess extends Module {
         // Hint:
         // 1. Enable single byte strobe at appropriate position
         // 2. Shift byte data to correct position based on address
-        writeStrobes(?) := true.B
-        writeData := data(?) << (mem_address_index << ?)
+        //    Low 8 bits of reg2_data are shifted left by (index * 8)
+        writeStrobes(mem_address_index) := true.B
+        writeData := data(7, 0) << (mem_address_index << 3.U)
       }
       is(InstructionsTypeS.sh) {
         // TODO: Complete store halfword logic
         // Hint: Check address to determine lower/upper halfword position
-        when(mem_address_index(?) === 0.U) {
+        when(mem_address_index(1) === 0.U) {
           // Lower halfword (bytes 0-1)
           // TODO: Enable strobes for lower two bytes, no shifting needed
-          writeStrobes(?) := true.B
-          writeStrobes(?) := true.B
-          writeData := data(?)
+          writeStrobes(0) := true.B
+          writeStrobes(1) := true.B
+          writeData := data(15, 0)
         }.otherwise {
           // Upper halfword (bytes 2-3)
           // TODO: Enable strobes for upper two bytes, apply appropriate shift
-          writeStrobes(?) := true.B
-          writeStrobes(?) := true.B
-          writeData := data(?) << ?
+          writeStrobes(2) := true.B
+          writeStrobes(3) := true.B
+          writeData := data(15, 0) << 16
         }
       }
       is(InstructionsTypeS.sw) {
