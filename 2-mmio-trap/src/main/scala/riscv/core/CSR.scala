@@ -10,13 +10,16 @@ import riscv.Parameters
 
 // RISC-V Machine-mode CSR addresses (Privileged Spec Vol.II)
 object CSRRegister {
-  val MSTATUS  = 0x300.U(Parameters.CSRRegisterAddrWidth)
-  val MIE      = 0x304.U(Parameters.CSRRegisterAddrWidth)
-  val MTVEC    = 0x305.U(Parameters.CSRRegisterAddrWidth)
-  val MSCRATCH = 0x340.U(Parameters.CSRRegisterAddrWidth)
-  val MEPC     = 0x341.U(Parameters.CSRRegisterAddrWidth)
-  val MCAUSE   = 0x342.U(Parameters.CSRRegisterAddrWidth)
-  val CycleL   = 0xc00.U(Parameters.CSRRegisterAddrWidth)
+  // 狀態與控制類
+  val MSTATUS  = 0x300.U(Parameters.CSRRegisterAddrWidth) // 控制全域中斷是否開啟 (MIE)，並記錄發生中斷前的狀態 (MPIE)
+  val MIE      = 0x304.U(Parameters.CSRRegisterAddrWidth) // 控制「哪種類型」的中斷是被允許的（例如：Timer 中斷 MTIE、外部中斷 MEIE）
+  val MTVEC    = 0x305.U(Parameters.CSRRegisterAddrWidth) // 當發生例外或中斷時，CPU 要跳去哪裡執行程式碼（Trap Handler 的位址）
+  // 例外處理類
+  val MSCRATCH = 0x340.U(Parameters.CSRRegisterAddrWidth) // 通常用來暫存核心模式 (Machine Mode) 的 Stack Pointer
+  val MEPC     = 0x341.U(Parameters.CSRRegisterAddrWidth) // 記錄發生中斷那一瞬間的 PC，處理完後靠它跳回來
+  val MCAUSE   = 0x342.U(Parameters.CSRRegisterAddrWidth) // 記錄發生了什麼事
+  // 計數器類
+  val CycleL   = 0xc00.U(Parameters.CSRRegisterAddrWidth) // 記錄 CPU 從開機到現在跑了幾個 Cycle（分高低 32 位元）
   val CycleH   = 0xc80.U(Parameters.CSRRegisterAddrWidth)
 }
 
@@ -126,17 +129,17 @@ class CSR extends Module {
   val regLUT =
     IndexedSeq(
       // TODO: Complete CSR address to register mapping
-      CSRRegister.MSTATUS  -> ?,
-      CSRRegister.MIE      -> ?,
-      CSRRegister.MTVEC    -> ?,
-      CSRRegister.MSCRATCH -> ?,
-      CSRRegister.MEPC     -> ?,
-      CSRRegister.MCAUSE   -> ?,
+      CSRRegister.MSTATUS  -> mstatus,
+      CSRRegister.MIE      -> mie,
+      CSRRegister.MTVEC    -> mtvec,
+      CSRRegister.MSCRATCH -> mscratch,
+      CSRRegister.MEPC     -> mepc,
+      CSRRegister.MCAUSE   -> mcause,
 
       // 64-bit cycle counter split into high and low 32 bits
       // TODO: Extract low 32 bits and high 32 bits from cycles
-      CSRRegister.CycleL   -> ?,
-      CSRRegister.CycleH   -> ?,
+      CSRRegister.CycleL   -> cycles(31, 0),
+      CSRRegister.CycleH   -> cycles(63, 32),
     )
   cycles := cycles + 1.U
 
@@ -162,39 +165,41 @@ class CSR extends Module {
   // 2. CPU CSR instruction write: Secondary priority
   //
   // CSRs requiring atomic update (interrupt-related):
-  // - mstatus: Save/restore interrupt enable state
-  // - mepc: Save exception return address
-  // - mcause: Record trap cause
+  // - mstatus: Save/restore interrupt enable state 開關中斷
+  // - mepc: Save exception return address 記錄發生地點
+  // - mcause: Record trap cause 記錄發生原因
   when(io.clint_access_bundle.direct_write_enable) {
     // Atomic update when CLINT triggers interrupt
     // TODO: Which CSRs does CLINT need to write?
-    ? := io.clint_access_bundle.mstatus_write_data
-    ? := io.clint_access_bundle.mepc_write_data
-    ? := io.clint_access_bundle.mcause_write_data
+    // 1. CLINT 強制寫入 (Atomic Update)
+    mstatus := io.clint_access_bundle.mstatus_write_data
+    mepc := io.clint_access_bundle.mepc_write_data
+    mcause := io.clint_access_bundle.mcause_write_data
   }.elsewhen(io.reg_write_enable_id) {
     // CPU CSR instruction write
     // TODO: Update corresponding CSR based on write address
+    // 2. CPU 指令寫入 (只有當 CLINT 沒動作時才准寫)
     when(io.reg_write_address_id === CSRRegister.MSTATUS) {
-      mstatus := ?
+      mstatus := io.reg_write_data_ex
     }.elsewhen(io.reg_write_address_id === CSRRegister.MEPC) {
-      ? := io.reg_write_data_ex
+      mepc := io.reg_write_data_ex
     }.elsewhen(io.reg_write_address_id === CSRRegister.MCAUSE) {
-      ? := io.reg_write_data_ex
+      mcause := io.reg_write_data_ex
     }
   }
 
   // CPU-exclusive CSRs (CLINT never writes these):
-  // - mie: Machine interrupt enable bits
-  // - mtvec: Machine trap vector base address
-  // - mscratch: Machine scratch register for trap handlers
+  // - mie: Machine interrupt enable bits 中斷使能遮罩
+  // - mtvec: Machine trap vector base address 中斷向量表基底
+  // - mscratch: Machine scratch register for trap handlers 暫存用
   when(io.reg_write_enable_id) {
     // TODO: Complete write logic for these CSRs
     when(io.reg_write_address_id === CSRRegister.MIE) {
-      ? := io.reg_write_data_ex
+      mie := io.reg_write_data_ex
     }.elsewhen(io.reg_write_address_id === CSRRegister.MTVEC) {
-      ? := io.reg_write_data_ex
+      mtvec := io.reg_write_data_ex
     }.elsewhen(io.reg_write_address_id === CSRRegister.MSCRATCH) {
-      ? := io.reg_write_data_ex
+      mscratch := io.reg_write_data_ex
     }
   }
 
