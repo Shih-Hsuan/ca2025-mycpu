@@ -50,7 +50,7 @@ class CSRDirectAccessBundle extends Bundle {
 // CSR Updates (mstatus):
 // - Trap entry: MPIE←MIE, MIE←0 (save and disable interrupts)
 // - MRET: MIE←MPIE, MPIE←1 (restore interrupts and set MPIE)
-class CLINT extends Module {
+class CLINT extends Module { // 中斷管理器
   val io = IO(new Bundle {
     // Interrupt signals from peripherals
     val interrupt_flag = Input(UInt(Parameters.InterruptFlagWidth))
@@ -66,7 +66,7 @@ class CLINT extends Module {
 
     val csr_bundle = new CSRDirectAccessBundle
   })
-  val interrupt_enable_global   = io.csr_bundle.mstatus(3) // MIE bit (global enable)
+  val interrupt_enable_global   = io.csr_bundle.mstatus(3) // MIE bit (global enable) MIE bit 3
   val interrupt_enable_timer    = io.csr_bundle.mie(7)     // MTIE bit (timer enable)
   val interrupt_enable_external = io.csr_bundle.mie(11)    // MEIE bit (external enable)
 
@@ -100,12 +100,14 @@ class CLINT extends Module {
   // - After:  mstatus.MIE=0, mstatus.MPIE=1 (saved previous enable state)
 
   // Check individual interrupt source enable based on interrupt type
+  // 判斷是否要觸發中斷
   val interrupt_source_enabled = Mux(
     io.interrupt_flag === InterruptCode.Timer0,
     interrupt_enable_timer,
     interrupt_enable_external
-  )
+  )// 檢查該類型的中斷開關有沒有開 (MTIE / MEIE)
 
+  // 1. 收到中斷訊號 (flag != None) 2. 總開關有開 (MIE bit 3) 3. 該類型的分開關有開 (MTIE / MEIE)
   when(io.interrupt_flag =/= InterruptCode.None && interrupt_enable_global && interrupt_source_enabled) { // interrupt
     io.interrupt_assert          := true.B
     io.interrupt_handler_address := io.csr_bundle.mtvec
