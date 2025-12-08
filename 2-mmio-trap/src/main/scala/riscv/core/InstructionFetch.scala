@@ -66,7 +66,14 @@ class InstructionFetch extends Module {
     // - Inner multiplexer: Check jump flag
     //   - True: Use jump target address
     //   - False: Sequential execution
-    pc := ?
+    pc := Mux(io.interrupt_assert, 
+              io.interrupt_handler_address, // True: 跳去中斷處理程式 (mtvec)
+                  // Inner multiplexer : 檢查跳轉 (Jump/Branch)
+                  Mux(io.jump_flag_id, 
+                      io.jump_address_id, // True: 執行 JAL/JALR/Branch 跳轉
+                      pc + 4.U            // False: 正常下一行指令
+                  )
+              )
 
   }.otherwise {
     // When instruction is invalid, hold PC and insert NOP (ADDI x0, x0, 0)
