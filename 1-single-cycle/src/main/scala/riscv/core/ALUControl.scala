@@ -42,28 +42,28 @@ class ALUControl extends Module {
   // Default ALU function for address calculation (Branch, Load, Store, JAL, JALR, LUI, AUIPC)
   io.alu_funct := ALUFunctions.add
 
-  switch(io.opcode) {
-    is(InstructionTypes.OpImm) {
+  switch(io.opcode) { /* Decide InstructionTypes */
+    is(InstructionTypes.OpImm) { /* OpImm : I-type immediate operation instructions */
       // I-type immediate operation instructions (ADDI, SLTI, XORI, ORI, ANDI, SLLI, SRLI, SRAI)
-      io.alu_funct := MuxLookup(io.funct3, ALUFunctions.zero)(
+      io.alu_funct := MuxLookup(io.funct3, ALUFunctions.zero)( /* Key : io.funct3、Value : io.alu_funct */
         Seq(
           // TODO: Map funct3 to corresponding ALU operation
           // Hint: Refer to definitions in InstructionsTypeI object
           InstructionsTypeI.addi  -> ALUFunctions.add,  // Completed example
-          InstructionsTypeI.slli  -> ALUFunctions.sll,
+          InstructionsTypeI.slli  -> ALUFunctions.sll,  /* IF(io.funct3 == InstructionsTypeI.slli) io.alu_funct = ALUFunctions.sll */
           InstructionsTypeI.slti  -> ALUFunctions.slt,
           InstructionsTypeI.sltiu -> ALUFunctions.sltu,
 
           // TODO: Complete the following mappings
-          InstructionsTypeI.xori  -> ?,
-          InstructionsTypeI.ori   -> ?,
-          InstructionsTypeI.andi  -> ?,
+          InstructionsTypeI.xori  -> ALUFunctions.xor,
+          InstructionsTypeI.ori   -> ALUFunctions.or,
+          InstructionsTypeI.andi  -> ALUFunctions.and,
 
           // SRLI/SRAI distinguished by funct7[5]:
           //   funct7[5] = 0 → SRLI (logical right shift)
           //   funct7[5] = 1 → SRAI (arithmetic right shift)
           // TODO: Complete Mux selection logic
-          InstructionsTypeI.sri   -> ?
+          InstructionsTypeI.sri   -> Mux(io.funct7(5), ALUFunctions.sra, ALUFunctions.srl)
         )
       )
     }
@@ -76,22 +76,22 @@ class ALUControl extends Module {
           //   funct7[5] = 0 → ADD
           //   funct7[5] = 1 → SUB
           // TODO: Complete Mux selection logic
-          InstructionsTypeR.add_sub -> ?,
+          InstructionsTypeR.add_sub -> Mux(io.funct7(5), ALUFunctions.sub, ALUFunctions.add),
 
           InstructionsTypeR.sll     -> ALUFunctions.sll,
           InstructionsTypeR.slt     -> ALUFunctions.slt,
           InstructionsTypeR.sltu    -> ALUFunctions.sltu,
 
           // TODO: Complete the following mappings
-          InstructionsTypeR.xor     -> ?,
-          InstructionsTypeR.or      -> ?,
-          InstructionsTypeR.and     -> ?,
+          InstructionsTypeI.xori  -> ALUFunctions.xor,
+          InstructionsTypeI.ori   -> ALUFunctions.or,
+          InstructionsTypeI.andi  -> ALUFunctions.and,
 
           // SRL/SRA distinguished by funct7[5]:
           //   funct7[5] = 0 → SRL (logical right shift)
           //   funct7[5] = 1 → SRA (arithmetic right shift)
           // TODO: Complete Mux selection logic
-          InstructionsTypeR.sr      -> ?
+          InstructionsTypeR.sr    -> Mux(io.funct7(5), ALUFunctions.sra, ALUFunctions.srl)
         )
       )
     }
